@@ -39,15 +39,21 @@ def get_args():
                         help='Put all screenshots in same destination',)
     parser.add_argument('--keep-exts', dest='exts', action='store_true',
                         help='Keep file extensions with all file names')
+    parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--grind', action='store_true',
+                        help='Doesn\'t wait for children to finish causing CPU and I/O grind')
     parser.add_argument('files', type=str, metavar='files',
                         nargs='+', help='videos to screenshot')
+
 
     args = parser.parse_args()
     return args
 
 
 def take_screenshots(args, video):
-    cmd = 'ffmpeg -ss %s -i \'%s\' \'%s.png\''
+    if args.verbose: print "Now processing %s" % video.path
+    cmd = 'ffmpeg -ss %s -y -i \'%s\' -f image2 -vframes 1 \'%s.png\''
     interval = video.duration / args.num_shots
     filename = None
     destination = args.destination
@@ -61,18 +67,32 @@ def take_screenshots(args, video):
         destination = nested_d
 
     for i in range(1, args.num_shots + 1):
+        if args.verbose: print "Taking screenshot %d/%d" % (i, args.num_shots)
         f_dest = os.path.join(destination, str(i).zfill(args.padding))
         if args.flat:
             f_dest = os.path.join(destination, filename + '_' + str(i).zfill(args.padding))
 
         p_cmd = cmd % (str(interval * i), video.path, f_dest)
         p = subprocess.Popen(p_cmd, shell=True, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT)
-
+                             stderr=subprocess.STDOUT)
+        if not args.grind:
+            p.wait()
+        if args.debug: print ''.join(p.stdout.readlines())
 
 def make_dir(directory):
     if not os.path.exists(directory):
         os.mkdir(directory)
+
+def extract_subtitles(args, video):
+    cmd = 'ffmpeg -y -i \'%s\' -an -vn -scodec copy -copyinkf -f ass \'%s\''
+    sub_file = os.path.join(args.destination, 'sub.ass')
+    p_cmd = cmd % (video.path, sub_file)
+    if args.verbose: print p_cmd
+    p = subprocess.Popen(p_cmd, shell=True, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT)
+    p.wait()
+    if args.debug: print ''.join(p.stdout.readlines())
+    return sub_file
 
 def main():
     args = get_args()
@@ -81,6 +101,11 @@ def main():
     make_dir(args.destination)
 
     for v in vids:
+        # if args.verbose: print "Creating subtitle file"
+        # sub = extract_subtitles(args, v)
+        # if args.verbose: print "Created " + sub
         take_screenshots(args, v)
+        # if args.verbose: print "Removing " + sub
+        # os.remove(sub)
 
 main()
